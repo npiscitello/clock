@@ -26,6 +26,9 @@
 `define COUNTER_T unsigned [16:0]
 `define ALARM_T unsigned [0:0]
 
+// magic numbers
+`define COUNTER_MAX 86399
+
 // routes information between modules
 module main;
   reg unsigned [0:0]clock;
@@ -34,7 +37,7 @@ module main;
   wire `ALARM_T alarm_state;
   reg  `ALARM_T alarm_state_reg;
 
-  counter_m counter(counter_state);
+  counter_m counter(clock, counter_state);
   alarm_m alarm(counter_state_reg, alarm_state);
   out_m out(counter_state_reg, alarm_state_reg);
 
@@ -44,6 +47,7 @@ module main;
     clock = 0;
   end
 
+  // tick, tock, tick, tock...
   always begin
     #2 clock = ~clock;
   end
@@ -52,8 +56,15 @@ endmodule
 // manages main timing state
 module counter_m( input wire unsigned [0:0]clock,
                   output reg `COUNTER_T counter_state);
-  reg `COUNTER_T _counter_state;
+  reg `COUNTER_T _counter_state = 0;
 
+  always @(posedge clock) begin
+    if( _counter_state < `COUNTER_MAX )
+      _counter_state++;
+    else
+      _counter_state = 0;
+    counter_state = _counter_state;
+  end
 endmodule
 
 // manages alarm state
@@ -66,4 +77,9 @@ endmodule
 // manages output formatting
 module out_m( input wire `COUNTER_T counter_state,
               input wire `ALARM_T alarm_state);
+  // usually I like to explicitly specify the sensitivities, but
+  // we want to make sure the output always reflects the most
+  // current state of every input.
+  always @( * ) begin
+  end
 endmodule
