@@ -1,3 +1,5 @@
+// hardware: DE2I-150 FPGA
+
 // I'm taking a page out of real life and stealing the concept of the UNIX timestamp. There's a 
 // master counter module, counting seconds from 0 (12:00:00 AM) to 86399 (11:59:59 PM). This module
 // is also, as to be expected, in charge of handling user input for setting the time. There is an 
@@ -76,6 +78,11 @@ module counter_m( input wire unsigned [0:0]clock,
   reg `FLAG_T _set_flag = 0;
   reg `COUNTER_T _counter_state = 0;
 
+  // initialize output state
+  initial begin
+    counter_state = _counter_state;
+  end
+
   always @(posedge clock) begin
     // store input state
     _set_flag = 0;
@@ -105,6 +112,11 @@ module alarm_m( input wire `COUNTER_T counter_state,
   reg `FLAG_T _alarm_flag = 0;
   reg `COUNTER_T _alarm_time = 0;
   reg `FLAG_T _alarm_state = 0;
+
+  // initialize output states
+  initial begin
+    alarm_state = _alarm_state;
+  end
 
   always @( alarm_flag, alarm_time ) begin
     // store input state
@@ -138,7 +150,8 @@ module out_m( input wire `COUNTER_T counter_state,
   reg `TIME_T _hour;
   reg `TIME_T _min;
   reg `TIME_T _sec;
-  reg unsigned [7:0] _ampm;
+  reg unsigned [1*7:0] _ampm;
+  reg unsigned [3*7:0] _alarm_str;
 
   // usually I like to explicitly specify the sensitivities, but we want to make sure the output
   // always reflects the most current state of every input.
@@ -153,13 +166,17 @@ module out_m( input wire `COUNTER_T counter_state,
       _ampm = "P";
     else
       _ampm = "A";
+    if( alarm_state )
+      _alarm_str = "<!>";
+    else
+      _alarm_str = "   ";
 
     // hour 0 is actually 12 - the assignment doesn't matter because we've already calculated AM/PM
     // and it'll get recalculated on the next run
     if( _hour == 0 )
       _hour = 12;
 
-    $display("%02d:%02d:%02d %cM", _hour, _min, _sec, _ampm);
+    $display("%s %02d:%02d:%02d %cM %s", _alarm_str, _hour, _min, _sec, _ampm, _alarm_str);
   end
 endmodule
 
@@ -170,5 +187,17 @@ module test_m(  output reg `FLAG_T set_flag,
                 output reg `COUNTER_T set_time,
                 output reg `FLAG_T alarm_flag,
                 output reg `COUNTER_T alarm_time);
+  reg `FLAG_T _set_flag = 0;
+  reg `COUNTER_T _set_time = 0;
+  reg `FLAG_T _alarm_flag = 0;
+  reg `COUNTER_T _alarm_time = 0;
+
+  // initialize output states
+  initial begin
+    set_flag = _set_flag;
+    set_time = _set_time;
+    alarm_flag = _alarm_flag;
+    alarm_time = _alarm_time;
+  end
 
 endmodule
