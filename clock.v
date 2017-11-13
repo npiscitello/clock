@@ -17,6 +17,9 @@
 // I'm attempting to encapsulate state within each module, emulating OOP. Maybe that's not a very
 // good thing to do in HDL?
 
+// set to 1 to enable more verbose debugging output
+`define DEBUG 0
+
 // state var types
 `define COUNTER_T unsigned [16:0]
 `define FLAG_T unsigned [0:0]
@@ -49,7 +52,7 @@ module main;
 
   counter_m counter(clock, set_flag_reg, set_time_reg, counter_state);
   alarm_m alarm(counter_state_reg, set_flag_reg, alarm_flag_reg, alarm_time_reg, alarm_state);
-  out_m out(counter_state_reg, alarm_state_reg);
+  out_m out(clock, counter_state_reg, alarm_state_reg);
   test_m test(set_flag, set_time, alarm_flag, alarm_time);
 
   initial begin
@@ -64,6 +67,8 @@ module main;
 
   // tick, tock, tick, tock...
   always begin
+    if( `DEBUG )
+      $display("clock: %d", clock);
     #1 clock = ~clock;
   end
 endmodule
@@ -83,7 +88,7 @@ module counter_m( input wire unsigned [0:0]clock,
     counter_state = _counter_state;
   end
 
-  always @(posedge clock) begin
+  always @( posedge clock) begin
     // store input state
     _set_flag = 0;
 
@@ -147,7 +152,8 @@ endmodule
 // manages output formatting. Since this system is based off the second timestamp, this can be
 // easily adapted to a 24 hour clock, or a 6 hour clock, or hex output, or really whatever you want.
 // Moral of the story: by design, changes to this module don't affect the operation of the clock.
-module out_m( input wire `COUNTER_T counter_state,
+module out_m( input wire [0:0]clock,
+              input wire `COUNTER_T counter_state,
               input wire `FLAG_T alarm_state);
   reg `TIME_T _hour;
   reg `TIME_T _min;
@@ -155,8 +161,10 @@ module out_m( input wire `COUNTER_T counter_state,
   reg unsigned [1*7:0] _ampm;
   reg unsigned [3*7:0] _alarm_str;
 
-  // alarm state is asynchronous; we only want to update the output when the time changes
-  always @( counter_state ) begin
+  // output on negative edges because all the action happens on positive edges. This way, we can be
+  // sure everything has been calculated and pushed into the state registers before we print the
+  // contents of those registers.
+  always @( negedge clock ) begin
     // store input state
     // We could save a little time by not subtracting and letting integer division take care of
     // rounding off the numbers, but I think it's more readable this way.
@@ -203,47 +211,47 @@ module test_m(  output reg `FLAG_T set_flag,
     alarm_time = 0;
 
     // one second is 2 system ticks
-    $display("\n\033[1minitialization + 10 ticks (5 seconds)\033[0m");
-    #10;
+    $display("\n\033[1minitialization + 11 ticks (5 seconds, stop with clock low)\033[0m");
+    #11;
 
     // this should hold the counter at the set value; we allow 5 seconds to go by but we should only
     // see one line of output. Hacking movement FTW!
-    $display("\033[1mraising set flag, time set to 34953 (9:42:33 AM); 4 ticks (2 seconds)\033[0m");
+    $display("\033[1mraising set flag, time set to 34953 (9:42:33 AM); 10 ticks (5 seconds)\033[0m");
     set_flag = 1; set_time = 34953; // 9:42:33 AM
-    #4;
+    #10;
 
     // releasing the set flag should start the clock ticking again at the set time
-    $display("\033[1mreleasing set flag; 4 ticks (2 seconds)\033[0m");
+    $display("\033[1mreleasing set flag; 10 ticks (5 seconds)\033[0m");
     set_flag = 0;
-    #4;
+    #10;
 
     // setting the alarm to a future time shouldn't have any affect
-    $display("\033[1mraising alarm flag, alarm set to 34957 (9:42:37 AM); 8 ticks (4 seconds)\033[0m");
-    alarm_flag = 1; alarm_time = 34957; // 9:42:37 AM
-    #8;
+    $display("\033[1mraising alarm flag, alarm set to 34961 (9:42:41 AM); 20 ticks (10 seconds)\033[0m");
+    alarm_flag = 1; alarm_time = 34961;
+    #20;
 
     // releasing the alarm flag should clear the triggered alarm
-    $display("\033[1mreleasing alarm flag; 4 ticks (2 seconds)\033[0m");
+    $display("\033[1mreleasing alarm flag; 10 ticks (5 seconds)\033[0m");
     alarm_flag = 0;
-    #4;
+    #10;
 
     // since releasing the flag should clear the state, raising it again should have no effect
-    $display("\033[1mraising alarm flag, time left at previous setpoint; 4 ticks (2 seconds)\033[0m");
+    $display("\033[1mraising alarm flag, time left at previous setpoint; 10 ticks (5 seconds)\033[0m");
     alarm_flag = 1;
-    #4;
+    #10;
 
     // releasing the alarm flag shouldn't clear the setpoint though...
-    $display("\033[1mraising set flag, time set to 34955 (9:42:35 AM); 2 ticks (1 second)\033[0m");
+    $display("\033[1mraising set flag, time set to 34955 (9:42:35 AM); 4 ticks (2 seconds)\033[0m");
     set_flag = 1; set_time = 34955; // 9:42:35 AM
-    #2;
-
-    $display("\033[1mreleasing set flag; 8 ticks (4 seconds)\033[0m");
-    set_flag = 0;
-    #8;
-
-    $display("\033[1mreleasing alarm flag; 4 ticks (2 seconds)\033[0m");
-    alarm_flag = 0;
     #4;
+
+    $display("\033[1mreleasing set flag; 20 ticks (10 seconds)\033[0m");
+    set_flag = 0;
+    #20;
+
+    $display("\033[1mreleasing alarm flag; 10 ticks (5 seconds)\033[0m");
+    alarm_flag = 0;
+    #10;
 
     // This test is a compound test: raising set with a time then raising alarm with the same time
     // should not trigger the alarm, even after set is released, since that time has already passed.
@@ -252,17 +260,30 @@ module test_m(  output reg `FLAG_T set_flag,
     // current, but we don't want the alarm to trigger since we've deliberately set the clock to
     // that time. When set is released, that time has now passed, so the alarm needs to wait until
     // the next time around.
-    $display("\033[1mraising set flag, time set to 50925 (2:08:45 PM); 4 ticks (2 seconds)\033[0m");
+    $display("\033[1mraising set flag, time set to 50925 (2:08:45 PM); 10 ticks (5 seconds)\033[0m");
     set_flag = 1; set_time = 50925;
-    #4;
+    #10;
 
-    $display("\033[1mraising alarm flag, time set to 50925 (2:08:45 PM); 4 ticks (2 seconds)\033[0m");
+    $display("\033[1mraising alarm flag, time set to 50925 (2:08:45 PM); 10 ticks (5 seconds)\033[0m");
     alarm_flag = 1; alarm_time = 50925;
-    #4;
+    #10;
 
-    $display("\033[1mreleasing set flag; 4 ticks (2 seconds)\033[0m");
+    $display("\033[1mreleasing set flag; 10 ticks (5 seconds)\033[0m");
     set_flag = 0;
-    #4;
+    #10;
+
+    // The alarm should trigger, however, if the time is set to one second before the alarm setpoint
+    $display("\033[1mraising set flag, time set to 50924 (2:08:44 PM); 4 ticks (2 seconds)\033[0m");
+    set_flag = 1; set_time = 50924;
+    #10;
+
+    $display("\033[1mreleasing set flag; 10 ticks (5 seconds)\033[0m");
+    set_flag = 0;
+    #10;
+
+    $display("\033[1mreleasing alarm flag; 10 ticks (5 seconds)\033[0m");
+    alarm_flag = 0;
+    #10
 
     $display();
     $finish;
