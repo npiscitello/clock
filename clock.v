@@ -12,6 +12,8 @@
 // clock signal.
 
 // Maybe it's the C programmer in me - this probably isn't very well optimized for FPGA hardware.
+// I'm attempting to encapsulate state within each module, emulating OOP. Maybe that's not a very
+// good thing to do in HDL?
 
 // state var types
 `define COUNTER_T unsigned [16:0]
@@ -46,6 +48,7 @@ module main;
   counter_m counter(clock, set_flag_reg, set_time_reg, counter_state);
   alarm_m alarm(counter_state_reg, set_flag_reg, alarm_flag_reg, alarm_time_reg, alarm_state);
   out_m out(counter_state_reg, alarm_state_reg);
+  test_m test(set_flag, set_time, alarm_flag, alarm_time);
 
   initial begin
     assign counter_state_reg = counter_state;
@@ -59,7 +62,7 @@ module main;
 
   // tick, tock, tick, tock...
   always begin
-    #2 clock = ~clock;
+    #1 clock = ~clock;
   end
 endmodule
 
@@ -70,9 +73,13 @@ module counter_m( input wire unsigned [0:0]clock,
                   input wire `FLAG_T set_flag,
                   input wire `COUNTER_T set_time,
                   output reg `COUNTER_T counter_state);
+  reg `FLAG_T _set_flag = 0;
   reg `COUNTER_T _counter_state = 0;
 
   always @(posedge clock) begin
+    // store input state
+    _set_flag = 0;
+
     if( set_flag )
       _counter_state = set_time;
     else begin
@@ -81,6 +88,8 @@ module counter_m( input wire unsigned [0:0]clock,
       else
         _counter_state = 0;
       end
+
+      // write output state
     counter_state = _counter_state;
   end
 endmodule
@@ -93,8 +102,32 @@ module alarm_m( input wire `COUNTER_T counter_state,
                 input wire `FLAG_T alarm_flag,
                 input wire `COUNTER_T alarm_time,
                 output reg `FLAG_T alarm_state);
-  reg `COUNTER_T _alarm_time;
-  reg `FLAG_T _alarm_state;
+  reg `FLAG_T _alarm_flag = 0;
+  reg `COUNTER_T _alarm_time = 0;
+  reg `FLAG_T _alarm_state = 0;
+
+  always @( alarm_flag, alarm_time ) begin
+    // store input state
+    _alarm_flag = alarm_flag;
+    _alarm_time = alarm_time;
+
+    if( !_alarm_flag )
+      _alarm_state = 0;
+
+    // write output state
+    alarm_state = _alarm_state;
+  end
+
+  always @( counter_state ) begin
+    if( _alarm_flag && !set_flag ) begin
+      if( counter_state == alarm_time )
+        _alarm_state = 1;
+
+      // write output state - usually this would be at the root of the always @ block, but in this
+      // case we don't want to do anything unless the alarm is enabled
+      alarm_state = _alarm_state;
+    end
+  end
 endmodule
 
 
@@ -110,6 +143,7 @@ module out_m( input wire `COUNTER_T counter_state,
   // usually I like to explicitly specify the sensitivities, but we want to make sure the output
   // always reflects the most current state of every input.
   always @( * ) begin
+    // store input state
     // We could save a little time by not subtracting and letting integer division take care of
     // rounding off the numbers, but I think it's more readable this way.
     _sec = counter_state % `SEC_ROLLOVER;
@@ -131,20 +165,10 @@ endmodule
 
 
 
-// manages user input
-module in_m(  output reg `FLAG_T set_flag,
-              output reg `COUNTER_T set_time,
-              output reg `FLAG_T alarm_flag,
-              output reg `COUNTER_T alarm_time);
-  reg `FLAG_T _set_flag = 0;
-  reg `COUNTER_T _set_time = 0;
-  reg `FLAG_T _alarm_flag = 0;
-  reg `COUNTER_T _alarm_time = 0;
+// simulates user input for testing
+module test_m(  output reg `FLAG_T set_flag,
+                output reg `COUNTER_T set_time,
+                output reg `FLAG_T alarm_flag,
+                output reg `COUNTER_T alarm_time);
 
-  initial begin
-    set_flag = _set_flag;
-    set_time = _set_time;
-    alarm_flag = _alarm_flag;
-    alarm_time = _alarm_time;
-  end
 endmodule
