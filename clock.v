@@ -13,17 +13,15 @@
 // state is managed by each module individually. This module is also responsible for generating the
 // clock signal.
 
-// Maybe it's the C programmer in me - this probably isn't very well optimized for FPGA hardware.
-// I'm attempting to encapsulate state within each module, emulating OOP. Maybe that's not a very
-// good thing to do in HDL?
+
 
 // uncomment to enable more verbose debugging output or pass '-D DEBUG' during compilation
 //`define DEBUG
 
-// uncomment to enable console-specific prettiness or pass '-D PRETTY' during compilation
-//`define PRETTY
+// uncomment to enable console-specific prettiness or pass '-D CONSOLE' during compilation
+//`define CONSOLE
 
-`ifdef PRETTY
+`ifdef CONSOLE
   `define PREPEND "\033[1m"
   `define APPEND "\033[0m"
 `else
@@ -45,36 +43,26 @@
 `define HOUR_ROLLOVER 12  // 0 is converted to 12 on the fly during output
 `define AMPM_TICK 43200   // 60 sec * 60 min * 12 hours
 
+
+
 // routes information between modules
 module main;
-  reg unsigned [0:0]clock;
+  // There's no state stored in this module - it's only here to provide a clock and route signals.
+  // For each wire here, there's exactly ONE reg in one module serving as state memory, identified
+  // by a leading underscore. For example, the 'set_flag' wire is used in every module except 'out';
+  // its state memory, however, lives in the 'test' module and is named '_set_flag'.
+  reg unsigned [0:0]clock = 0;
   wire `COUNTER_T counter_state;
-  reg  `COUNTER_T counter_state_reg;
   wire `FLAG_T set_flag;
-  reg  `FLAG_T set_flag_reg;
   wire `COUNTER_T set_time;
-  reg  `COUNTER_T set_time_reg;
   wire `FLAG_T alarm_state;
-  reg  `FLAG_T alarm_state_reg;
   wire `FLAG_T alarm_flag;
-  reg  `FLAG_T alarm_flag_reg;
   wire `COUNTER_T alarm_time;
-  reg  `COUNTER_T alarm_time_reg;
 
-  counter_m counter(clock, set_flag_reg, set_time_reg, counter_state);
-  alarm_m alarm(counter_state_reg, set_flag_reg, alarm_flag_reg, alarm_time_reg, alarm_state);
-  out_m out(clock, counter_state_reg, alarm_state_reg);
+  counter_m counter(clock, set_flag, set_time, counter_state);
+  alarm_m alarm(counter_state, set_flag, alarm_flag, alarm_time, alarm_state);
+  out_m out(clock, counter_state, alarm_state);
   test_m test(set_flag, set_time, alarm_flag, alarm_time);
-
-  initial begin
-    assign counter_state_reg = counter_state;
-    assign set_flag_reg = set_flag;
-    assign set_time_reg = set_time;
-    assign alarm_state_reg = alarm_state;
-    assign alarm_flag_reg = alarm_flag;
-    assign alarm_time_reg = alarm_time;
-    clock = 0;
-  end
 
   // tick, tock, tick, tock...
   always begin
@@ -91,19 +79,11 @@ endmodule
 module counter_m( input wire unsigned [0:0]clock,
                   input wire `FLAG_T set_flag,
                   input wire `COUNTER_T set_time,
-                  output reg `COUNTER_T counter_state);
-  reg `FLAG_T _set_flag = 0;
+                  output wire `COUNTER_T counter_state);
   reg `COUNTER_T _counter_state = 0;
-
-  // initialize output state
-  initial begin
-    counter_state = _counter_state;
-  end
+  assign counter_state = _counter_state;
 
   always @( posedge clock) begin
-    // store input state
-    _set_flag = 0;
-
     if( set_flag )
       _counter_state = set_time;
     else begin
@@ -112,9 +92,6 @@ module counter_m( input wire unsigned [0:0]clock,
       else
         _counter_state = 0;
       end
-
-      // write output state
-    counter_state = _counter_state;
   end
 endmodule
 
@@ -125,36 +102,19 @@ module alarm_m( input wire `COUNTER_T counter_state,
                 input wire `FLAG_T set_flag,
                 input wire `FLAG_T alarm_flag,
                 input wire `COUNTER_T alarm_time,
-                output reg `FLAG_T alarm_state);
-  reg `FLAG_T _alarm_flag = 0;
-  reg `COUNTER_T _alarm_time = 0;
+                output wire `FLAG_T alarm_state);
   reg `FLAG_T _alarm_state = 0;
-
-  // initialize output states
-  initial begin
-    alarm_state = _alarm_state;
-  end
+  assign alarm_state = _alarm_state;
 
   always @( alarm_flag, alarm_time ) begin
-    // store input state
-    _alarm_flag = alarm_flag;
-    _alarm_time = alarm_time;
-
-    if( !_alarm_flag )
+    if( !alarm_flag )
       _alarm_state = 0;
-
-    // write output state
-    alarm_state = _alarm_state;
   end
 
   always @( counter_state ) begin
-    if( _alarm_flag && !set_flag ) begin
+    if( alarm_flag && !set_flag ) begin
       if( counter_state == alarm_time )
         _alarm_state = 1;
-
-      // write output state - usually this would be at the root of the always @ block, but in this
-      // case we don't want to do anything unless the alarm is enabled
-      alarm_state = _alarm_state;
     end
   end
 endmodule
@@ -177,7 +137,6 @@ module out_m( input wire [0:0]clock,
   // sure everything has been calculated and pushed into the state registers before we print the
   // contents of those registers.
   always @( negedge clock ) begin
-    // store input state
     // We could save a little time by not subtracting and letting integer division take care of
     // rounding off the numbers, but I think it's more readable this way.
     _sec = counter_state % `SEC_ROLLOVER;
@@ -204,24 +163,20 @@ endmodule
 
 
 // simulates user input for testing
-module test_m(  output reg `FLAG_T set_flag,
-                output reg `COUNTER_T set_time,
-                output reg `FLAG_T alarm_flag,
-                output reg `COUNTER_T alarm_time);
-  /* we drive outputs directly b/c these are inputs; the state is stored in the respective modules
-   * reg `FLAG_T _set_flag = 0;
-   * reg `COUNTER_T _set_time = 0;
-   * reg `FLAG_T _alarm_flag = 0;
-   * reg `COUNTER_T _alarm_time = 0; 
-   */
+module test_m(  output wire `FLAG_T set_flag,
+                output wire `COUNTER_T set_time,
+                output wire `FLAG_T alarm_flag,
+                output wire `COUNTER_T alarm_time);
+   reg `FLAG_T _set_flag = 0;
+   reg `COUNTER_T _set_time = 0;
+   reg `FLAG_T _alarm_flag = 0;
+   reg `COUNTER_T _alarm_time = 0; 
+   assign set_flag = _set_flag;
+   assign set_time = _set_time;
+   assign alarm_flag = _alarm_flag;
+   assign alarm_time = _alarm_time;
 
   initial begin
-    // initialize output states
-    set_flag = 0;
-    set_time = 0;
-    alarm_flag = 0;
-    alarm_time = 0;
-
     // one second is 2 system ticks
     $display("\n%sinitialization + 11 ticks (5 seconds, stop with clock low)%s", `PREPEND, `APPEND);
     #11;
@@ -229,40 +184,40 @@ module test_m(  output reg `FLAG_T set_flag,
     // this should hold the counter at the set value; we allow 5 seconds to go by but we should only
     // see one line of output. Hacking movement FTW!
     $display("%sraising set flag, time set to 34953 (9:42:33 AM); 10 ticks (5 seconds)%s", `PREPEND, `APPEND);
-    set_flag = 1; set_time = 34953; // 9:42:33 AM
+    _set_flag = 1; _set_time = 34953; // 9:42:33 AM
     #10;
 
     // releasing the set flag should start the clock ticking again at the set time
     $display("%sreleasing set flag; 10 ticks (5 seconds)%s", `PREPEND, `APPEND);
-    set_flag = 0;
+    _set_flag = 0;
     #10;
 
     // setting the alarm to a future time shouldn't have any affect
     $display("%sraising alarm flag, alarm set to 34961 (9:42:41 AM); 20 ticks (10 seconds)%s", `PREPEND, `APPEND);
-    alarm_flag = 1; alarm_time = 34961;
+    _alarm_flag = 1; _alarm_time = 34961;
     #20;
 
     // releasing the alarm flag should clear the triggered alarm
     $display("%sreleasing alarm flag; 10 ticks (5 seconds)%s", `PREPEND, `APPEND);
-    alarm_flag = 0;
+    _alarm_flag = 0;
     #10;
 
     // since releasing the flag should clear the state, raising it again should have no effect
     $display("%sraising alarm flag, time left at previous setpoint; 10 ticks (5 seconds)%s", `PREPEND, `APPEND);
-    alarm_flag = 1;
+    _alarm_flag = 1;
     #10;
 
     // releasing the alarm flag shouldn't clear the setpoint though...
     $display("%sraising set flag, time set to 34955 (9:42:35 AM); 4 ticks (2 seconds)%s", `PREPEND, `APPEND);
-    set_flag = 1; set_time = 34955; // 9:42:35 AM
+    _set_flag = 1; _set_time = 34955; // 9:42:35 AM
     #4;
 
     $display("%sreleasing set flag; 20 ticks (10 seconds)%s", `PREPEND, `APPEND);
-    set_flag = 0;
+    _set_flag = 0;
     #20;
 
     $display("%sreleasing alarm flag; 10 ticks (5 seconds)%s", `PREPEND, `APPEND);
-    alarm_flag = 0;
+    _alarm_flag = 0;
     #10;
 
     // This test is a compound test: raising set with a time then raising alarm with the same time
@@ -273,28 +228,28 @@ module test_m(  output reg `FLAG_T set_flag,
     // that time. When set is released, that time has now passed, so the alarm needs to wait until
     // the next time around.
     $display("%sraising set flag, time set to 50925 (2:08:45 PM); 10 ticks (5 seconds)%s", `PREPEND, `APPEND);
-    set_flag = 1; set_time = 50925;
+    _set_flag = 1; _set_time = 50925;
     #10;
 
     $display("%sraising alarm flag, time set to 50925 (2:08:45 PM); 10 ticks (5 seconds)%s", `PREPEND, `APPEND);
-    alarm_flag = 1; alarm_time = 50925;
+    _alarm_flag = 1; _alarm_time = 50925;
     #10;
 
     $display("%sreleasing set flag; 10 ticks (5 seconds)%s", `PREPEND, `APPEND);
-    set_flag = 0;
+    _set_flag = 0;
     #10;
 
     // The alarm should trigger, however, if the time is set to one second before the alarm setpoint
     $display("%sraising set flag, time set to 50924 (2:08:44 PM); 4 ticks (2 seconds)%s", `PREPEND, `APPEND);
-    set_flag = 1; set_time = 50924;
+    _set_flag = 1; _set_time = 50924;
     #10;
 
     $display("%sreleasing set flag; 10 ticks (5 seconds)%s", `PREPEND, `APPEND);
-    set_flag = 0;
+    _set_flag = 0;
     #10;
 
     $display("%sreleasing alarm flag; 10 ticks (5 seconds)%s", `PREPEND, `APPEND);
-    alarm_flag = 0;
+    _alarm_flag = 0;
     #10
 
     $display();
