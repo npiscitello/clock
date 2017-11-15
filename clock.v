@@ -46,7 +46,7 @@
 
 
 // routes information between modules
-module main;
+module clock;
   // There's no state stored in this module - it's only here to provide a clock and route signals.
   // For each wire here, there's exactly ONE reg in one module serving as state memory, identified
   // by a leading underscore. For example, the 'set_flag' wire is used in every module except 'out';
@@ -88,7 +88,7 @@ module counter_m( input wire unsigned [0:0]clock,
       _counter_state = set_time;
     else begin
       if( _counter_state < `COUNTER_MAX )
-        _counter_state++;
+        _counter_state = _counter_state + 1;
       else
         _counter_state = 0;
       end
@@ -106,16 +106,15 @@ module alarm_m( input wire `COUNTER_T counter_state,
   reg `FLAG_T _alarm_state = 0;
   assign alarm_state = _alarm_state;
 
-  always @( alarm_flag, alarm_time ) begin
-    if( !alarm_flag )
+  // Quartus doesn't like _alarm_state being driven from 2 different always loops...
+  always @( alarm_flag, counter_state ) begin
+    if( alarm_flag ) begin
+      if( !set_flag ) begin
+        if( counter_state == alarm_time )
+          _alarm_state = 1;
+      end
+    end else
       _alarm_state = 0;
-  end
-
-  always @( counter_state ) begin
-    if( alarm_flag && !set_flag ) begin
-      if( counter_state == alarm_time )
-        _alarm_state = 1;
-    end
   end
 endmodule
 
