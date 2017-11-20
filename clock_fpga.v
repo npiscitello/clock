@@ -17,8 +17,6 @@
 `define HOUR_ROLLOVER 12  // 0 is converted to 12 on the fly during output
 `define AMPM_TICK 43200   // 60 sec * 60 min * 12 hours
 
-
-
 // routes information between modules
 // use the same switches for set_time and alarm_time
 // use momentary buttons for set_flag and alarm_flag
@@ -124,6 +122,22 @@ module out_m( input wire [0:0]clock,
   assign second_tens = _second_tens;
   assign second_ones = _second_ones;
 
+  // I'm lazy so I'm using a lookup table instead of logic
+  reg `SSD_T _ssd_table [9:0];
+
+  initial begin
+    _ssd_table[0] = 8'b00000011;
+    _ssd_table[1] = 8'b10011111;
+    _ssd_table[2] = 8'b00100101;
+    _ssd_table[3] = 8'b00001101;
+    _ssd_table[4] = 8'b10011001;
+    _ssd_table[5] = 8'b01001001;
+    _ssd_table[6] = 8'b01000001;
+    _ssd_table[7] = 8'b00011111;
+    _ssd_table[8] = 8'b00000001;
+    _ssd_table[9] = 8'b00001001;
+  end
+
   // output on negative edges because all the action happens on positive edges. This way, we can be
   // sure everything has been calculated and pushed into the state registers before we print the
   // contents of those registers.
@@ -143,6 +157,20 @@ module out_m( input wire [0:0]clock,
     if( _hour == 0 )
       _hour = 12;
 
-    // logic to drive each SSD with the value of _sec, _min, _hour, _ampm, alarm_state
+    /*
+    _second_ones = _ssd_table[_sec % 10];
+    _second_tens = _ssd_table[_sec / 10];
+    _minute_ones = _ssd_table[_min % 10];
+    _minute_tens = _ssd_table[_min / 10];
+    _hour_ones = _ssd_table[_hour % 10];
+    _hour_tens = _ssd_table[_hour / 10];
+    */
+
+    _second_ones = _ssd_table[5];
+    _second_tens = _ssd_table[4];
+    _minute_ones = _ssd_table[3];
+    _minute_tens = _ssd_table[2];
+    _hour_ones = _ssd_table[1];
+    _hour_tens = _ssd_table[0];
   end
 endmodule
