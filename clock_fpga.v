@@ -159,18 +159,18 @@ module out_m( input wire [0:0]clock,
 
     /*
     _second_ones = _ssd_table[_sec % 10];
-    _second_tens = _ssd_table[_sec / 10];
+    _second_tens = _ssd_table[(_sec - _second_ones) / 10];
     _minute_ones = _ssd_table[_min % 10];
-    _minute_tens = _ssd_table[_min / 10];
+    _minute_tens = _ssd_table[(_min - _minute_ones) / 10];
     _hour_ones = _ssd_table[_hour % 10];
-    _hour_tens = _ssd_table[_hour / 10];
+    _hour_tens = _ssd_table[(_hour - _hour_ones) / 10];
     */
 
-    _second_ones = _ssd_table[5];
-    _second_tens = _ssd_table[4];
-    _minute_ones = _ssd_table[3];
-    _minute_tens = _ssd_table[2];
-    _hour_ones = _ssd_table[1];
-    _hour_tens = _ssd_table[0];
+    _second_ones = _ssd_table[counter_state / 1    % 10];
+    _second_tens = _ssd_table[counter_state / 10   % 10];
+    _minute_ones = _ssd_table[counter_state / 100  % 10];
+    _minute_tens = _ssd_table[counter_state / 1000 % 10];
+    _hour_ones = _ssd_table[counter_state / 10000  % 10];
+    _hour_tens = _ssd_table[counter_state / 100000 % 10];
   end
 endmodule
